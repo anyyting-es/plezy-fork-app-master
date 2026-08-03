@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../media/media_item.dart';
+import '../media/media_backend.dart';
 import '../mixins/disposable_change_notifier_mixin.dart';
 import '../services/watch_state_resolver.dart';
 import '../utils/global_key_utils.dart';
@@ -82,9 +83,12 @@ class WatchStateStore extends ChangeNotifier with DisposableChangeNotifierMixin 
   WatchStatePatch? patchForGlobalKey(String globalKey) => _entryFor(globalKey)?.patch;
 
   WatchStatePatch? patchForItem(MediaItem item) {
-    var best = _entryFor(item.globalKey);
+    final serverId = serverIdOrNull(item.serverId) ??
+        ((item.backend == MediaBackend.anilist || item.backend == MediaBackend.tmdb)
+            ? ServerId(item.backend.id)
+            : null);
+    var best = _entryFor(serverId != null ? buildGlobalKey(serverId, item.id) : item.globalKey);
     if (item.parentChain.isNotEmpty) {
-      final serverId = serverIdOrNull(item.serverId);
       for (final parentId in item.parentChain) {
         // Mirror MediaItem.globalKey's bare-id fallback when serverId is missing.
         final entry = _entryFor(serverId != null ? buildGlobalKey(serverId, parentId) : parentId);

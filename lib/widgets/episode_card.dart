@@ -171,43 +171,62 @@ class _EpisodeCardState extends State<EpisodeCard> with ContextMenuTapMixin<Epis
                       width: 144,
                       child: Stack(
                         children: [
-                          ClipRRect(
-                            borderRadius: const BorderRadius.all(Radius.circular(6)),
-                            child: AspectRatio(
-                              aspectRatio: 16 / 9,
-                              child: shouldBlur
-                                  ? ClipRect(
-                                      child: ImageFiltered(
-                                        imageFilter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                                        child: _buildEpisodeThumbnail(episode),
-                                      ),
-                                    )
-                                  : _buildEpisodeThumbnail(episode),
+                          Opacity(
+                            opacity: episode.isWatched ? 0.6 : 1.0,
+                            child: ColorFiltered(
+                              colorFilter: episode.isWatched
+                                  ? const ColorFilter.matrix(<double>[
+                                      0.2126, 0.7152, 0.0722, 0, 0,
+                                      0.2126, 0.7152, 0.0722, 0, 0,
+                                      0.2126, 0.7152, 0.0722, 0, 0,
+                                      0,      0,      0,      1, 0,
+                                    ])
+                                  : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
+                              child: ClipRRect(
+                                borderRadius: const BorderRadius.all(Radius.circular(6)),
+                                child: AspectRatio(
+                                  aspectRatio: 16 / 9,
+                                  child: (episode.isWatched || shouldBlur)
+                                      ? ClipRect(
+                                          child: ImageFiltered(
+                                            imageFilter: ImageFilter.blur(
+                                              sigmaX: episode.isWatched ? 2.0 : 12.0,
+                                              sigmaY: episode.isWatched ? 2.0 : 12.0,
+                                            ),
+                                            child: _buildEpisodeThumbnail(episode),
+                                          ),
+                                        )
+                                      : _buildEpisodeThumbnail(episode),
+                                ),
+                              ),
                             ),
                           ),
 
                           Positioned.fill(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: const BorderRadius.all(Radius.circular(6)),
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Colors.transparent, Colors.black.withValues(alpha: 0.2)],
-                                ),
-                              ),
-                              child: Center(
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.6),
-                                    shape: BoxShape.circle,
+                            child: Opacity(
+                              opacity: episode.isWatched ? 0.6 : 1.0,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: const BorderRadius.all(Radius.circular(6)),
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.2)],
                                   ),
-                                  child: const AppIcon(
-                                    Symbols.play_arrow_rounded,
-                                    fill: 1,
-                                    color: Colors.white,
-                                    size: 20,
+                                ),
+                                child: Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: 0.6),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const AppIcon(
+                                      Symbols.play_arrow_rounded,
+                                      fill: 1,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -229,9 +248,11 @@ class _EpisodeCardState extends State<EpisodeCard> with ContextMenuTapMixin<Epis
                     const SizedBox(width: 10),
 
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: .start,
-                        children: [
+                      child: Opacity(
+                        opacity: episode.isWatched ? 0.7 : 1.0,
+                        child: Column(
+                          crossAxisAlignment: .start,
+                          children: [
                           Selector<DownloadProvider, _DownloadSlice>(
                             selector: (_, p) =>
                                 _DownloadSlice.from(p.getProgress(episode.globalKey), p.isQueueing(episode.globalKey)),
@@ -317,6 +338,7 @@ class _EpisodeCardState extends State<EpisodeCard> with ContextMenuTapMixin<Epis
                           _buildEpisodeMetaRow(context, episode, qualityLabels),
                         ],
                       ),
+                    ),
                     ),
                   ],
                 ),

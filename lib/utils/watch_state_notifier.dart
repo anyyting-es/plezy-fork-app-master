@@ -1,4 +1,5 @@
 import '../media/media_item.dart';
+import '../media/media_backend.dart';
 import '../media/ids.dart';
 import '../media/watch_progress.dart';
 import 'app_logger.dart';
@@ -98,10 +99,14 @@ class WatchStateNotifier extends BaseNotifier<WatchStateEvent> {
 
   /// Helper to emit a watched/unwatched event from a [MediaItem].
   void notifyWatched({required MediaItem item, bool isNowWatched = true, String? cacheServerId}) {
-    final serverId = serverIdOrNull(item.serverId);
+    var serverId = serverIdOrNull(item.serverId);
     if (serverId == null) {
-      appLogger.w('WatchStateNotifier: missing serverId for ${item.id}, skipping watched event');
-      return;
+      if (item.backend == MediaBackend.anilist || item.backend == MediaBackend.tmdb) {
+        serverId = ServerId(item.backend.id);
+      } else {
+        appLogger.w('WatchStateNotifier: missing serverId for ${item.id}, skipping watched event');
+        return;
+      }
     }
     notify(
       WatchStateEvent(
@@ -126,10 +131,14 @@ class WatchStateNotifier extends BaseNotifier<WatchStateEvent> {
     required int duration,
     double watchedThreshold = 0.9,
   }) {
-    final serverId = serverIdOrNull(item.serverId);
+    var serverId = serverIdOrNull(item.serverId);
     if (serverId == null) {
-      appLogger.w('WatchStateNotifier: missing serverId for ${item.id}, skipping progress event');
-      return;
+      if (item.backend == MediaBackend.anilist || item.backend == MediaBackend.tmdb) {
+        serverId = ServerId(item.backend.id);
+      } else {
+        appLogger.w('WatchStateNotifier: missing serverId for ${item.id}, skipping progress event');
+        return;
+      }
     }
     final isNowWatched = isWatchedProgress(positionMs: viewOffset, durationMs: duration, threshold: watchedThreshold);
 

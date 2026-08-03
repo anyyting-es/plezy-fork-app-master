@@ -31,7 +31,6 @@ import '../media/media_item_types.dart';
 import '../anime/services/anizip_service.dart';
 import '../services/tmdb_service.dart';
 import '../media/media_kind.dart';
-import '../media/media_backend.dart';
 import '../media/media_role.dart';
 import '../media/paged_media_list_state.dart';
 import '../widgets/media_card.dart';
@@ -88,6 +87,7 @@ import '../widgets/rasterized_gradient.dart';
 import '../widgets/tv_browse_rail.dart';
 import '../widgets/tv_spotlight_background.dart';
 import '../downloads/widgets/smart_download_dialog.dart';
+import '../services/trackers/anilist/anilist_tracker.dart';
 
 part 'media_detail/action_buttons.dart';
 
@@ -1328,13 +1328,34 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
               _hasLoadedExtras = true;
               _hasLoadedRelatedHubs = true;
             });
-            if (_metadata.isShow) {
+             if (_metadata.isShow) {
               unawaited(_loadSeasons());
             } else if (_metadata.isSeason) {
               _seasons = [_metadata];
               _showEpisodesDirectly = true;
               unawaited(_fetchAllEpisodes());
             }
+
+            // Fetch progress asynchronously from AniList if connected
+            unawaited(() async {
+              final trackerClient = AnilistTracker.instance.client;
+              if (trackerClient != null && _metadata.id.startsWith('anime_')) {
+                final animeId = int.tryParse(_metadata.id.substring('anime_'.length));
+                if (animeId != null) {
+                  try {
+                    final progress = await trackerClient.getMediaListProgress(animeId);
+                    if (progress != null && mounted) {
+                      setState(() {
+                        _fullMetadata = _metadata.copyWith(viewedLeafCount: progress);
+                      });
+                      await _fetchAllEpisodes();
+                    }
+                  } catch (e) {
+                    appLogger.w('Failed to load AniList progress asynchronously: $e');
+                  }
+                }
+              }
+            }());
           } else if (_metadata.isTmdb) {
             // Async load TMDB rich details (genres, taglines, backdrop, and external/IMDb ID)!
             unawaited(() async {
@@ -1817,6 +1838,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
                 thumbPath: ep.image,
                 originallyAvailableAt: ep.airDate,
                 durationMs: ep.runtime != null ? ep.runtime! * 60000 : null,
+                viewCount: (ep.episodeNumber <= (_metadata.viewedLeafCount ?? 0)) ? 1 : 0,
               )).toList();
             }
             _completeSeasonEpisodesLoad(
@@ -1918,6 +1940,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
               thumbPath: ep.image,
               originallyAvailableAt: ep.airDate,
               durationMs: ep.runtime != null ? ep.runtime! * 60000 : null,
+              viewCount: (ep.episodeNumber <= (_metadata.viewedLeafCount ?? 0)) ? 1 : 0,
             )).toList();
           }
           if (!mounted || _showEpisodesDirectly || seasonIndex >= _seasons.length || _seasons[seasonIndex].id != seasonId) {
@@ -2987,6 +3010,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
               thumbPath: ep.image,
               originallyAvailableAt: ep.airDate,
               durationMs: ep.runtime != null ? ep.runtime! * 60000 : null,
+              viewCount: (ep.episodeNumber <= (_metadata.viewedLeafCount ?? 0)) ? 1 : 0,
             )).toList();
           }
           if (mounted) {

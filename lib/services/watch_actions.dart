@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../media/ids.dart';
 import '../media/media_item.dart';
+import '../media/media_backend.dart';
 import '../media/media_server_client.dart';
 import '../providers/offline_mode_provider.dart';
 import '../providers/offline_watch_provider.dart';
@@ -54,7 +55,19 @@ class WatchActions {
       return WatchMarkOutcome.queuedOffline;
     }
 
-    if (serverId == null) return WatchMarkOutcome.skipped;
+    if (serverId == null) {
+      if (item.backend == MediaBackend.anilist || item.backend == MediaBackend.tmdb) {
+        WatchStateNotifier().notifyWatched(item: item, isNowWatched: watched, cacheServerId: '');
+        unawaited(
+          watched
+              ? TrackerCoordinator.instance.markWatched(item, null)
+              : TrackerCoordinator.instance.markUnwatched(item, null),
+        );
+        return WatchMarkOutcome.marked;
+      }
+      return WatchMarkOutcome.skipped;
+    }
+
     final client = context.tryGetMediaClientForServer(ServerId(serverId));
     if (client == null) return WatchMarkOutcome.skipped;
 

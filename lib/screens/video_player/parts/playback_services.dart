@@ -205,8 +205,8 @@ extension _VideoPlayerPlaybackServiceMethods on VideoPlayerScreenState {
     if (mediaClient != null) {
       unawaited(DiscordRPCService.instance.startPlayback(metadata, mediaClient));
       unawaited(TraktScrobbleService.instance.startPlayback(metadata, mediaClient, isLive: widget.isLive));
-      unawaited(TrackerCoordinator.instance.startPlayback(metadata, mediaClient, isLive: widget.isLive));
     }
+    unawaited(TrackerCoordinator.instance.startPlayback(metadata, mediaClient, isLive: widget.isLive));
   }
 
   /// (Re)create the [PlaybackProgressTracker] for the current play session.
@@ -237,7 +237,7 @@ extension _VideoPlayerPlaybackServiceMethods on VideoPlayerScreenState {
         mediaInfo: mediaInfo,
       );
       _progressTracker!.startTracking();
-    } else if (_isOfflinePlayback) {
+    } else {
       _progressTracker = PlaybackProgressTracker(
         client: null,
         metadata: metadata,

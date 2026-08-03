@@ -51,6 +51,7 @@ import '../services/playback_context.dart';
 import '../services/playback_session.dart';
 import '../services/playback_progress_tracker.dart';
 import '../services/playback_source_resolver.dart';
+import '../services/backend_sync_service.dart';
 import '../services/offline_watch_sync_service.dart';
 import '../services/display_mode_service.dart';
 import '../services/settings_service.dart';

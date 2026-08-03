@@ -125,6 +125,15 @@ extension _VideoPlayerOpenMethods on VideoPlayerScreenState {
     Duration? requested,
   }) async {
     if (requested != null) return requested;
+
+    // Check shared backend first if available
+    final syncKey = '${metadata.backend.id}_${metadata.globalKey}';
+    final backendProgress = await BackendSyncService.getProgress(syncKey);
+    if (backendProgress != null) {
+      appLogger.d('Resuming playback from backend progress: ${backendProgress.inMilliseconds}ms');
+      return backendProgress;
+    }
+
     // In offline mode, prefer locally tracked progress over the cached server
     // value since the user may have watched further since downloading.
     if (isOffline) {

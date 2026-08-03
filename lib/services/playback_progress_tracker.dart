@@ -8,9 +8,11 @@ import '../media/media_item.dart';
 import '../media/media_server_client.dart';
 import '../media/media_source_info.dart';
 import 'offline_watch_sync_service.dart';
+import 'backend_sync_service.dart';
 import 'playback_report_session.dart';
 import 'settings_service.dart';
 import 'track_selection_service.dart';
+import 'trackers/tracker_coordinator.dart';
 import '../utils/app_logger.dart';
 import '../utils/watch_state_notifier.dart';
 
@@ -195,6 +197,15 @@ class PlaybackProgressTracker {
         return;
       }
 
+      // Save to shared backend if connected
+      final syncKey = '${metadata.backend.id}_${metadata.globalKey}';
+      unawaited(BackendSyncService.saveProgress(syncKey, position.inMilliseconds, duration.inMilliseconds));
+
+      // Also scrobble trackers if playing directly (no server client bound)
+      if (client == null) {
+        await _maybeScrobble(null, position, duration);
+      }
+
       if (isOffline) {
         // Queue progress update for later sync
         await _sendOfflineProgress(position, duration);
@@ -321,22 +332,24 @@ class PlaybackProgressTracker {
     return info == null ? PlaybackStreamSelection.none : PlaybackStreamSelection(mediaSourceId: info.mediaSourceId);
   }
 
-  Future<void> _maybeScrobble(MediaServerClient c, Duration position, Duration duration) async {
+  Future<void> _maybeScrobble(MediaServerClient? c, Duration position, Duration duration) async {
     // Explicitly scrobble once progress crosses the watched threshold.
     // Some servers (Plex with no active play session, Jellyfin always)
     // don't auto-mark from progress updates alone.
     if (!_scrobbled && duration.inMilliseconds > 0) {
       final percent = position.inMilliseconds / duration.inMilliseconds;
-      final threshold = c.watchedThreshold;
+      final threshold = c?.watchedThreshold ?? 0.9;
       if (percent >= threshold) {
         _scrobbled = true;
         try {
-          // Backends that mark the item played from the playback-stopped report
-          // (Jellyfin) only emit the local watch event here — an explicit
-          // markWatched would double-scrobble via the Trakt plugin (#1287).
-          // Plex still issues the server call. Either path emits the watched
-          // event through WatchStateNotifier, so no extra notify is needed.
-          await c.markWatchedFromPlaybackStop(metadata);
+          if (c != null) {
+            await c.markWatchedFromPlaybackStop(metadata);
+          } else {
+            // Direct-play watch event:
+            WatchStateNotifier().notifyWatched(item: metadata, isNowWatched: true, cacheServerId: '');
+          }
+          // Also scrobble to trackers (MAL, AniList, Simkl, Trakt):
+          await TrackerCoordinator.instance.markWatched(metadata, c);
           appLogger.d(
             'Scrobbled ${metadata.id} (${(percent * 100).toStringAsFixed(0)}% >= ${(threshold * 100).toStringAsFixed(0)}%)',
           );

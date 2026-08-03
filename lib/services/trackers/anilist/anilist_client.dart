@@ -189,6 +189,28 @@ class AnilistClient implements DisposableTrackerClient {
     return count != null && count > 0 ? count : null;
   }
 
+  Future<int?> getMediaListProgress(int mediaId) async {
+    const mediaQuery = '''
+      query(\$mediaId: Int) {
+        Media(id: \$mediaId, type: ANIME) {
+          mediaListEntry {
+            progress
+          }
+        }
+      }
+    ''';
+    try {
+      final data = await query(mediaQuery, variables: {'mediaId': mediaId});
+      final media = data['Media'];
+      if (media is! Map) return null;
+      final entry = media['mediaListEntry'];
+      if (entry is! Map) return null;
+      return flexibleInt(entry['progress']);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>> query(String query, {Map<String, dynamic>? variables}) async {
     final uri = Uri.parse(AnilistConstants.apiBase);
     final headers = AnilistConstants.headers(accessToken: _session.accessToken);

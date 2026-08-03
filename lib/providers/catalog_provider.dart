@@ -12,6 +12,8 @@ import '../media/media_item.dart';
 import '../media/media_hub.dart';
 import '../media/media_backend.dart';
 import '../media/media_kind.dart';
+import '../media/ids.dart';
+import '../utils/watch_state_notifier.dart';
 import '../i18n/strings.g.dart';
 
 enum CatalogLoadState { initial, loading, loaded, error }
@@ -21,9 +23,16 @@ const _kCacheTtl = Duration(minutes: 30);
 
 /// Unified catalog provider for both AniList (Anime) and TMDB (Movies and Series).
 class CatalogProvider extends ChangeNotifier {
+  StreamSubscription<WatchStateEvent>? _watchSubscription;
+
   CatalogProvider() {
     _loadData();
     SettingsService.instance.listenable(SettingsService.discoverContentType).addListener(_onSettingChanged);
+    _watchSubscription = WatchStateNotifier().stream.listen((event) {
+      if (event.serverId == ServerId(MediaBackend.anilist.id) || event.serverId == ServerId(MediaBackend.tmdb.id)) {
+        unawaited(forceRefresh());
+      }
+    });
   }
 
   void _onSettingChanged() {
@@ -33,6 +42,7 @@ class CatalogProvider extends ChangeNotifier {
   @override
   void dispose() {
     SettingsService.instance.listenable(SettingsService.discoverContentType).removeListener(_onSettingChanged);
+    _watchSubscription?.cancel();
     super.dispose();
   }
 

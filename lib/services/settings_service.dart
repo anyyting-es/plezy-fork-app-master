@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import '../media/ids.dart';
 import 'dart:io';
@@ -11,6 +12,7 @@ import '../i18n/strings.g.dart';
 import '../models/mpv_config_models.dart';
 import '../models/external_player_models.dart';
 import 'base_shared_preferences_service.dart';
+import 'backend_sync_service.dart';
 import 'device_performance.dart';
 export 'base_shared_preferences_service.dart'
     show Pref, BoolPref, IntPref, DoublePref, StringPref, NullableStringPref, StringListPref, EnumPref, JsonPref;
@@ -909,5 +911,13 @@ class SettingsService extends BaseSharedPreferencesService {
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
     await PlexImageCacheManager.instance.emptyCache();
+  }
+
+  @override
+  Future<void> write<T>(Pref<T> pref, T value) async {
+    await super.write(pref, value);
+    if (BackendSyncService.shouldAutoPushSettings) {
+      unawaited(BackendSyncService.pushSettings());
+    }
   }
 }

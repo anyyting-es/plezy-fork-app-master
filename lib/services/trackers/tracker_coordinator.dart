@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../media/media_item.dart';
 import '../../media/media_kind.dart';
 import '../../media/media_server_client.dart';
+import '../../media/media_backend.dart';
 import '../../models/trackers/tracker_context.dart';
 import '../../utils/app_logger.dart';
 import '../../media/episode_collection.dart';
@@ -15,6 +16,8 @@ import 'simkl/simkl_tracker.dart';
 import 'tracker.dart';
 import 'tracker_constants.dart';
 import 'tracker_id_resolver.dart';
+import '../../utils/external_ids.dart';
+import '../../models/trackers/anime_ids.dart';
 
 /// Fan-out for non-Trakt trackers (MAL, AniList, Simkl). Owns the per-playback
 /// threshold state: each connected tracker is notified exactly once when
@@ -57,17 +60,55 @@ class TrackerCoordinator {
     await Future.wait(_trackers.map((t) => t.initialize()));
   }
 
-  Future<void> startPlayback(MediaItem metadata, MediaServerClient client, {bool isLive = false}) async {
+  Future<void> startPlayback(MediaItem metadata, MediaServerClient? client, {bool isLive = false}) async {
     if (isLive) return;
     final mediaType = metadata.kind;
     if (mediaType != MediaKind.movie && mediaType != MediaKind.episode) return;
     final libraryGlobalKey = metadata.libraryGlobalKey;
-    if (!_hasActiveTrackerForLibrary(libraryGlobalKey)) {
+    final isNativeTracker = metadata.backend == MediaBackend.anilist || metadata.backend == MediaBackend.tmdb;
+    if (!_hasActiveTrackerForLibrary(libraryGlobalKey, isNativeTracker: isNativeTracker)) {
       _reset();
       return;
     }
 
     _activeLibraryGlobalKey = libraryGlobalKey;
+
+    if (client == null) {
+      if (metadata.backend == MediaBackend.anilist || metadata.backend == MediaBackend.tmdb) {
+        int? animeId;
+        if (metadata.backend == MediaBackend.anilist) {
+          final parent = metadata.grandparentId ?? metadata.parentId ?? metadata.id;
+          if (parent.startsWith('anime_')) {
+            animeId = int.tryParse(parent.substring('anime_'.length));
+          } else {
+            animeId = int.tryParse(parent);
+          }
+        }
+        final ctx = metadata.kind == MediaKind.movie
+            ? TrackerContext.movie(
+                external: const ExternalIds(tmdb: null, imdb: null, tvdb: null),
+                anime: AnimeIds(anilist: animeId),
+                ratingKey: metadata.id,
+                libraryGlobalKey: metadata.libraryGlobalKey,
+              )
+            : TrackerContext.episode(
+                external: const ExternalIds(tmdb: null, imdb: null, tvdb: null),
+                anime: AnimeIds(anilist: animeId),
+                ratingKey: metadata.id,
+                libraryGlobalKey: metadata.libraryGlobalKey,
+                season: metadata.parentIndex ?? 1,
+                episodeNumber: metadata.index ?? 1,
+                animeProgress: metadata.index ?? 1,
+              );
+        _reset();
+        _ctx = ctx;
+        _watchedThreshold = 0.9;
+      } else {
+        _reset();
+      }
+      return;
+    }
+
     final clientKey = client.cacheServerId;
     if (_resolver == null || _resolverClientKey != clientKey) {
       _resolver?.clearCache();
@@ -87,11 +128,11 @@ class TrackerCoordinator {
 
   bool _anyTrackerNeedsFribb() => _anyTrackerNeedsFribbForLibrary(_activeLibraryGlobalKey);
 
-  bool _hasActiveTrackerForLibrary(String? libraryGlobalKey) =>
-      _trackers.any((t) => t.canScrobble && t.shouldScrobbleForLibrary(libraryGlobalKey));
+  bool _hasActiveTrackerForLibrary(String? libraryGlobalKey, {bool isNativeTracker = false}) =>
+      _trackers.any((t) => t.canScrobble && (isNativeTracker || t.shouldScrobbleForLibrary(libraryGlobalKey)));
 
-  bool _anyTrackerNeedsFribbForLibrary(String? libraryGlobalKey) =>
-      _trackers.any((t) => t.canScrobble && t.needsFribb && t.shouldScrobbleForLibrary(libraryGlobalKey));
+  bool _anyTrackerNeedsFribbForLibrary(String? libraryGlobalKey, {bool isNativeTracker = false}) =>
+      _trackers.any((t) => t.canScrobble && t.needsFribb && (isNativeTracker || t.shouldScrobbleForLibrary(libraryGlobalKey)));
 
   void debugUseResolverDependencies({
     FribbMappingLookup? store,
@@ -112,7 +153,7 @@ class TrackerCoordinator {
     animeProgress: _debugAnimeProgress,
   );
 
-  Future<void> markWatched(MediaItem item, MediaServerClient client) async {
+  Future<void> markWatched(MediaItem item, MediaServerClient? client) async {
     try {
       await _markWatched(item, client);
     } catch (e) {
@@ -120,7 +161,7 @@ class TrackerCoordinator {
     }
   }
 
-  Future<void> markUnwatched(MediaItem item, MediaServerClient client) async {
+  Future<void> markUnwatched(MediaItem item, MediaServerClient? client) async {
     try {
       await _markUnwatched(item, client);
     } catch (e) {
@@ -128,14 +169,47 @@ class TrackerCoordinator {
     }
   }
 
-  Future<void> _markWatched(MediaItem item, MediaServerClient client) async {
+  Future<void> _markWatched(MediaItem item, MediaServerClient? client) async {
     final kind = item.kind;
     if (kind != MediaKind.movie && kind != MediaKind.episode && kind != MediaKind.season && kind != MediaKind.show) {
       return;
     }
 
     final libraryGlobalKey = item.libraryGlobalKey;
-    if (!_hasActiveTrackerForLibrary(libraryGlobalKey)) return;
+    final isNativeTracker = item.backend == MediaBackend.anilist || item.backend == MediaBackend.tmdb;
+    if (!_hasActiveTrackerForLibrary(libraryGlobalKey, isNativeTracker: isNativeTracker)) return;
+
+    if (client == null) {
+      if (item.backend == MediaBackend.anilist || item.backend == MediaBackend.tmdb) {
+        int? animeId;
+        if (item.backend == MediaBackend.anilist) {
+          final parent = item.grandparentId ?? item.parentId ?? item.id;
+          if (parent.startsWith('anime_')) {
+            animeId = int.tryParse(parent.substring('anime_'.length));
+          } else {
+            animeId = int.tryParse(parent);
+          }
+        }
+        final ctx = item.kind == MediaKind.movie
+            ? TrackerContext.movie(
+                external: const ExternalIds(tmdb: null, imdb: null, tvdb: null),
+                anime: AnimeIds(anilist: animeId),
+                ratingKey: item.id,
+                libraryGlobalKey: item.libraryGlobalKey,
+              )
+            : TrackerContext.episode(
+                external: const ExternalIds(tmdb: null, imdb: null, tvdb: null),
+                anime: AnimeIds(anilist: animeId),
+                ratingKey: item.id,
+                libraryGlobalKey: item.libraryGlobalKey,
+                season: item.parentIndex ?? 1,
+                episodeNumber: item.index ?? 1,
+                animeProgress: item.index ?? 1,
+              );
+        await _dispatchMarkWatched(ctx);
+      }
+      return;
+    }
 
     final resolver = _newResolver(client, needsFribb: () => _anyTrackerNeedsFribbForLibrary(libraryGlobalKey));
 
@@ -155,14 +229,47 @@ class TrackerCoordinator {
     await _markContainerEpisodesWatched(episodes, resolver);
   }
 
-  Future<void> _markUnwatched(MediaItem item, MediaServerClient client) async {
+  Future<void> _markUnwatched(MediaItem item, MediaServerClient? client) async {
     final kind = item.kind;
     if (kind != MediaKind.movie && kind != MediaKind.episode && kind != MediaKind.season && kind != MediaKind.show) {
       return;
     }
 
     final libraryGlobalKey = item.libraryGlobalKey;
-    if (!_hasActiveTrackerForLibrary(libraryGlobalKey)) return;
+    final isNativeTracker = item.backend == MediaBackend.anilist || item.backend == MediaBackend.tmdb;
+    if (!_hasActiveTrackerForLibrary(libraryGlobalKey, isNativeTracker: isNativeTracker)) return;
+
+    if (client == null) {
+      if (item.backend == MediaBackend.anilist || item.backend == MediaBackend.tmdb) {
+        int? animeId;
+        if (item.backend == MediaBackend.anilist) {
+          final parent = item.grandparentId ?? item.parentId ?? item.id;
+          if (parent.startsWith('anime_')) {
+            animeId = int.tryParse(parent.substring('anime_'.length));
+          } else {
+            animeId = int.tryParse(parent);
+          }
+        }
+        final ctx = item.kind == MediaKind.movie
+            ? TrackerContext.movie(
+                external: const ExternalIds(tmdb: null, imdb: null, tvdb: null),
+                anime: AnimeIds(anilist: animeId),
+                ratingKey: item.id,
+                libraryGlobalKey: item.libraryGlobalKey,
+              )
+            : TrackerContext.episode(
+                external: const ExternalIds(tmdb: null, imdb: null, tvdb: null),
+                anime: AnimeIds(anilist: animeId),
+                ratingKey: item.id,
+                libraryGlobalKey: item.libraryGlobalKey,
+                season: item.parentIndex ?? 1,
+                episodeNumber: item.index ?? 1,
+                animeProgress: item.index ?? 1,
+              );
+        await _dispatchMarkUnwatched(ctx);
+      }
+      return;
+    }
 
     final resolver = _newResolver(client, needsFribb: () => _anyTrackerNeedsFribbForLibrary(libraryGlobalKey));
 
@@ -354,20 +461,22 @@ class TrackerCoordinator {
   }
 
   Future<void> _dispatchMarkWatched(TrackerContext ctx) async {
-    final active = _trackers.where((t) => t.canScrobble && t.shouldScrobbleForLibrary(ctx.libraryGlobalKey));
-    await _dispatchToTrackers(active, ctx);
+    final isNativeTracker = ctx.anime != null || ctx.libraryGlobalKey == null;
+    final active = _trackers.where((t) => _isActive(t, ctx.libraryGlobalKey, isNativeTracker: isNativeTracker));
+    await _dispatchToTrackers(active, ctx, isNativeTracker: isNativeTracker);
   }
 
   Future<void> _dispatchMarkUnwatched(TrackerContext ctx) async {
-    final active = _trackers.where((t) => t.canScrobble && t.shouldScrobbleForLibrary(ctx.libraryGlobalKey));
-    await _dispatchUnwatchedToTrackers(active, ctx);
+    final isNativeTracker = ctx.anime != null || ctx.libraryGlobalKey == null;
+    final active = _trackers.where((t) => _isActive(t, ctx.libraryGlobalKey, isNativeTracker: isNativeTracker));
+    await _dispatchUnwatchedToTrackers(active, ctx, isNativeTracker: isNativeTracker);
   }
 
-  bool _isActive(Tracker tracker, String? libraryGlobalKey) =>
-      tracker.canScrobble && tracker.shouldScrobbleForLibrary(libraryGlobalKey);
+  bool _isActive(Tracker tracker, String? libraryGlobalKey, {bool isNativeTracker = false}) =>
+      tracker.canScrobble && (isNativeTracker || tracker.shouldScrobbleForLibrary(libraryGlobalKey));
 
-  Future<void> _dispatchToTrackers(Iterable<Tracker> trackers, TrackerContext ctx) async {
-    final active = trackers.where((t) => _isActive(t, ctx.libraryGlobalKey));
+  Future<void> _dispatchToTrackers(Iterable<Tracker> trackers, TrackerContext ctx, {bool isNativeTracker = false}) async {
+    final active = trackers.where((t) => _isActive(t, ctx.libraryGlobalKey, isNativeTracker: isNativeTracker));
     await Future.wait(
       active.map((t) async {
         try {
@@ -379,8 +488,8 @@ class TrackerCoordinator {
     );
   }
 
-  Future<void> _dispatchUnwatchedToTrackers(Iterable<Tracker> trackers, TrackerContext ctx) async {
-    final active = trackers.where((t) => _isActive(t, ctx.libraryGlobalKey));
+  Future<void> _dispatchUnwatchedToTrackers(Iterable<Tracker> trackers, TrackerContext ctx, {bool isNativeTracker = false}) async {
+    final active = trackers.where((t) => _isActive(t, ctx.libraryGlobalKey, isNativeTracker: isNativeTracker));
     await Future.wait(
       active.map((t) async {
         try {

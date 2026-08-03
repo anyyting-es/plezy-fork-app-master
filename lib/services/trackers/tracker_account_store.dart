@@ -1,4 +1,6 @@
+import 'dart:async';
 import '../base_shared_preferences_service.dart';
+import '../backend_sync_service.dart';
 import 'tracker_constants.dart';
 import 'tracker_session.dart';
 
@@ -41,11 +43,17 @@ class TrackerAccountStore {
   Future<void> save(String userUuid, TrackerSession session) async {
     final prefs = await BaseSharedPreferencesService.sharedCache();
     await prefs.setString(_scopedKey(userUuid), session.encode());
+    if (BackendSyncService.shouldAutoPushSettings) {
+      unawaited(BackendSyncService.pushSettings());
+    }
   }
 
   Future<void> clear(String userUuid) async {
     final prefs = await BaseSharedPreferencesService.sharedCache();
     await prefs.remove(_scopedKey(userUuid));
+    if (BackendSyncService.shouldAutoPushSettings) {
+      unawaited(BackendSyncService.pushSettings());
+    }
   }
 }
 

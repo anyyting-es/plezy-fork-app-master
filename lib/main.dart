@@ -58,6 +58,7 @@ import 'services/pip_service.dart';
 import 'services/download_storage_service.dart';
 import 'services/torrent_engine_service.dart';
 import 'services/torrent_metadata_service.dart';
+import 'services/backend_sync_service.dart';
 
 import 'database/app_database.dart';
 import 'screens/video_player_screen.dart';
@@ -540,7 +541,11 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
 
     // Start the Go torrent backend daemon and metadata service in the background on app startup
     unawaited(TorrentMetadataService.instance.initialize());
-    unawaited(TorrentEngineService.instance.start());
+    unawaited(TorrentEngineService.instance.start().then((started) {
+      if (started) {
+        BackendSyncService.initialize();
+      }
+    }));
   }
 
   Future<void> _shutdownForExit() async {

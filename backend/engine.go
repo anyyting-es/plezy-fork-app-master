@@ -676,6 +676,7 @@ func coreStartServer(downloadDir string, port int) int {
 	}
 
 	loadMetadata(downloadDir)
+	loadUserdata(downloadDir)
 
 	initExtensionManager()
 
@@ -685,6 +686,8 @@ func coreStartServer(downloadDir string, port int) int {
 	mux.HandleFunc("/torrent/", handleTorrent)
 	mux.HandleFunc("/metadata", handleMetadata)
 	mux.HandleFunc("/metadata/", handleMetadata)
+	mux.HandleFunc("/userdata", handleUserdata)
+	mux.HandleFunc("/userdata/", handleUserdata)
 	mux.HandleFunc("/stream/", handleStream)
 	mux.HandleFunc("/list", handleList)
 	mux.HandleFunc("/events", handleEvents)
@@ -1141,3 +1144,81 @@ func authMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// Userdata persistence and REST handler
+
+var userdataMu sync.Mutex
+var userdataCache = make(map[string]interface{})
+
+func loadUserdata(downloadDir string) {
+	userdataMu.Lock()
+	defer userdataMu.Unlock()
+	file := filepath.Join(downloadDir, "user_sync_data.json")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return
+	}
+	_ = json.Unmarshal(data, &userdataCache)
+}
+
+func saveUserdata(downloadDir string) {
+	userdataMu.Lock()
+	defer userdataMu.Unlock()
+	file := filepath.Join(downloadDir, "user_sync_data.json")
+	data, err := json.MarshalIndent(userdataCache, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(file, data, 0o644)
+}
+
+func handleUserdata(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/userdata/")
+	if r.URL.Path == "/userdata" || r.URL.Path == "/userdata/" {
+		userdataMu.Lock()
+		defer userdataMu.Unlock()
+		writeJSON(w, userdataCache)
+		return
+	}
+
+	key := strings.ToLower(path)
+	if key == "" {
+		http.Error(w, "key required", http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		userdataMu.Lock()
+		val, ok := userdataCache[key]
+		userdataMu.Unlock()
+		if !ok {
+			http.Error(w, "Key not found", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, val)
+
+	case http.MethodPost:
+		var val interface{}
+		if err := json.NewDecoder(r.Body).Decode(&val); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		userdataMu.Lock()
+		userdataCache[key] = val
+		userdataMu.Unlock()
+		saveUserdata(manager.downloadDir)
+		w.WriteHeader(http.StatusNoContent)
+
+	case http.MethodDelete:
+		userdataMu.Lock()
+		delete(userdataCache, key)
+		userdataMu.Unlock()
+		saveUserdata(manager.downloadDir)
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
